@@ -164,4 +164,7 @@ cython_debug/
 *.keras
 DNS/GERAÇÃO DE PACOTES GAN PRONTA/generated_dns_packets_by_gan/dns.pcap
 *.pcap
-*.pcap
+*Zone.Identifier
+npz/
+results/
+generated_dns_packets_by_gan/

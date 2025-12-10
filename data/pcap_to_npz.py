@@ -14,7 +14,8 @@ if not os.path.exists(f"{npz_dir}"):
     
 
 def packet_useful_data(packet, start, end):
-    """Returns the useful data of a packet
+    """
+    Returns the useful data of a packet
 
     Args:
         packet (string): Packet
@@ -25,7 +26,8 @@ def packet_useful_data(packet, start, end):
     return packet[start:end]
 
 def packet_means(packet):
-    """Returns the means of the bytes of a packet
+    """
+    Returns the means of the bytes of a packet
     
     Args:
         packet (string): Packet
@@ -49,7 +51,8 @@ def packet_means(packet):
     return packet_with_mean
 
 def duplicate_and_map_bytes(byte_digits, n=28, d=2):
-    """Duplicates and maps the bytes of a packet
+    """
+    Duplicates and maps the bytes of a packet
     
     Args:
         byte_digits (list): List of bytes
@@ -80,7 +83,8 @@ def duplicate_and_map_bytes(byte_digits, n=28, d=2):
     return matrix
 
 def which_protocol(packet):
-    """Returns the protocol of a packet
+    """
+    Returns the protocol of a packet
     
     Args:
         packet (string): Packet
@@ -99,7 +103,8 @@ def which_protocol(packet):
     
 
 def process_pcap(pcap_name, packets_limit, useful_data_start, useful_data_end, desired_protocol, npz_file):
-    """Processes a pcap file and generates a dataset
+    """
+    Processes a pcap file and generates a dataset
 
     Args:
         pcap_name (string): Name of the pcap file
@@ -140,7 +145,8 @@ def process_pcap(pcap_name, packets_limit, useful_data_start, useful_data_end, d
     
 
 def main():
-    """Main function
+    """
+    Main function
     """
     parser = argparse.ArgumentParser(description="Process pcap file and generate dataset.")
     parser.add_argument("--pcap_name", type=str, default='default_pcap', help="Name of the pcap file")

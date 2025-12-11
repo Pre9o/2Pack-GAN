@@ -83,7 +83,7 @@ def pcap_global_header():
     Returns:
         str: Hexadecimal string representing the PCAP global header
     """
-    return ('D4 C3 B2 A1'      # Magic number (little endian)
+    return ('D4 C3 B2 A1'       # Magic number (little endian)
             '02 00'             # Major version (2)
             '04 00'             # Minor version (4)
             '00 00 00 00'       # GMT to local correction

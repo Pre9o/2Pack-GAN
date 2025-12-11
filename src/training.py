@@ -142,8 +142,13 @@ def save_generated_images(epoch, generator, batch, examples, random_dim, config)
         random_dim (int): Dimension of the latent vector
         config (TrainingConfig): Training configuration with directory paths
     """
+    # Generate random noise from latent space
     noise = np.random.normal(0, 1, (examples, random_dim))
+
+    # Generate packet representations
     generated_images = generator.predict(noise)
+
+    # Denormalize from [-1, 1] to [0, 255]
     generated_images = (generated_images + 1) * 127.5
     generated_images = generated_images.astype(np.uint8)
     

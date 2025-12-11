@@ -1,205 +1,278 @@
+"""
+Dataset generator for capturing real network traffic.
+
+This script captures ICMP and/or DNS traffic from a list of domains
+to create datasets for training the GAN. It uses tcpdump to capture
+packets and can generate ICMP, DNS, or combined traffic datasets.
+"""
+
 import os
 import pandas as pd
-import json
 from nslookup import Nslookup
+from argparse import ArgumentParser
 
-current_directory = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_directory)
-pcap_dir = os.path.join(parent_dir, 'PCAPS')
 
-csv_file_path = os.path.join(current_directory, 'top500Domains.csv')
+DEFAULT_DNS_SERVER = "1.1.1.1"
+DEFAULT_INTERFACE = "eth0"
 
-ud_ip_file_path = os.path.join(current_directory, 'unreachable_domains_ip.json')
-ud_dns_file_path = os.path.join(current_directory, 'unreachable_domains_dns.json')
-
-if not os.path.exists(ud_ip_file_path):
-    with open(ud_ip_file_path, 'w') as f:
-        json.dump([], f)
+class DatasetConfig:
+    """Manages directory paths for dataset generation."""
+    
+    def __init__(self, base_dir=None):
+        """Initialize dataset configuration.
         
-if not os.path.exists(ud_dns_file_path):
-    with open(ud_dns_file_path, 'w') as f:
-        json.dump([], f)
-
-current_unreachable_domains = []
-
-df = pd.DataFrame(pd.read_csv(csv_file_path, sep=','))
-print(df.head()) 
-
-def detect_unreachable_domains(option, num_requests=1, dns_query = Nslookup(dns_servers=["1.1.1.1"], verbose=False, tcp=False)):
-    """Detects unreachable domains using ICMP or DNS requests
-
-    Args:
-        option (integer): 1 for ICMP, 2 for DNS
-        num_requests (int, optional): It is 1, because this is just a verification. Defaults to 1.
-        dns_query (_type_, optional): Query for nslookup. Defaults to Nslookup(dns_servers=["1.1.1.1"], verbose=False, tcp=False).
-    """
-    if option == '1':
-        for index, row in df.iterrows():
-            if ping_ip(row['Root Domain'], num_requests):  # ICMP
-                print(f'ICMP: {index} working')
-            else:
-                print(f'ICMP: {index} not working')
-                current_unreachable_domains.append(row['Root Domain'])
+        Args:
+            base_dir (str, optional): Base directory. Defaults to parent of script directory
+        """
+        if base_dir is None:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            base_dir = os.path.dirname(current_dir)
         
-        with open(ud_ip_file_path, 'w') as f:
-            json.dump(current_unreachable_domains, f)
-                
-    elif option == '2':
-        for index, row in df.iterrows():
-            if nslookup_request(row['Root Domain'], num_requests, dns_query):  # DNS
-                print(f'DNS: {index} working')
-            else:
-                print(f'DNS: {index} not working')
-                current_unreachable_domains.append(row['Root Domain'])
-                
-        with open(ud_dns_file_path, 'w') as f:
-            json.dump(current_unreachable_domains, f)         
-
-
-def icmp_capture(pcap_name, num_pings, pcap_folder):
-    """Captures ICMP packets
-
-    Args:
-        pcap_name (string): Name of the pcap file
-        num_pings (integer): Number of pings
-    """
-    os.system(f"sudo tcpdump -w {os.path.join(pcap_folder, pcap_name)} -i eth0 icmp &")  # Start the ICMP capture process
-    unreachable_domains_file_ip = json.load(open(ud_ip_file_path))
-    
-    for index, row in df.iterrows():
-        if row['Root Domain'] in unreachable_domains_file_ip:
-            continue
-        else:
-            if ping_ip(row['Root Domain'], num_pings):  # ICMP
-                print(row['Root Domain'])
-            else:
-                print('Could not ping/DNS the domain: ' + row['Root Domain'])
+        self.base_dir = base_dir
+        self.pcaps_dir = os.path.join(base_dir, 'pcaps')
+        self.data_dir = os.path.join(base_dir, 'data')
+        self.csv_dir = os.path.join(self.data_dir, 'csv')
         
-    os.system("sudo pkill -2 tcpdump")  # Kill the process
+        os.makedirs(self.pcaps_dir, exist_ok=True)
+        os.makedirs(self.csv_dir, exist_ok=True)
     
-
-def dns_capture(pcap_name, num_dns, pcap_folder):
-    """Captures DNS packets
-
-    Args:
-        pcap_name (string): Name of the pcap file
-        num_dns (integer): Number of DNS requests
-    """
-    os.system(f"sudo tcpdump -w {os.path.join(pcap_folder, pcap_name)} -i eth0 udp dst port 53 &")  # Start the DNS capture process
-    unreachable_domains_file_dns = json.load(open(ud_dns_file_path))
-    
-    dns_query = Nslookup(dns_servers=["1.1.1.1"], verbose=False, tcp=False)
-    
-    for index, row in df.iterrows():
-        if row['Root Domain'] in unreachable_domains_file_dns:
-            continue
-        else:
-            if nslookup_request(row['Root Domain'], num_dns, dns_query):  # DNS
-                print(row['Root Domain'])
-            else:
-                print('Could not ping/DNS the domain: ' + row['Root Domain'])
+    def get_csv_path(self, csv_name):
+        """Get full path to CSV file.
         
-    os.system("sudo pkill -2 tcpdump")  # Kill the process
+        Args:
+            csv_name (str): Name of CSV file
+            
+        Returns:
+            str: Full path to CSV file
+        """
+        return os.path.join(self.csv_dir, csv_name)
     
-    
-def icmp_dns_capture(pcap_name, num_requests, pcap_folder):
-    """Captures ICMP and DNS packets
+    def get_pcap_path(self, pcap_name):
+        """Get full path to PCAP file.
+        
+        Args:
+            pcap_name (str): Name of PCAP file
+            
+        Returns:
+            str: Full path to PCAP file
+        """
+        if not pcap_name.endswith('.pcap'):
+            pcap_name += '.pcap'
+        return os.path.join(self.pcaps_dir, pcap_name)
+
+
+def ping_domain(domain, num_pings):
+    """Ping a domain using ICMP.
 
     Args:
-        pcap_name (string): Name of the pcap file
-        num_requests (integer): Number of requests
-    """
-    os.system(f"sudo tcpdump -w {os.path.join(pcap_folder, pcap_name)} -i eth0 icmp or udp dst port 53 &")  # Start the ICMP and DNS capture process
-    unreachable_domains_file_ip = json.load(open(ud_ip_file_path))
-    unreachable_domains_file_dns = json.load(open(ud_dns_file_path))
-    
-    dns_query = Nslookup(dns_servers=["1.1.1.1"], verbose=False, tcp=False)
-    
-    for index, row in df.iterrows():
-        if row['Root Domain'] in unreachable_domains_file_ip or row['Root Domain'] in unreachable_domains_file_dns:
-            continue
-        else:
-            if ping_ip(row['Root Domain'], num_requests) and nslookup_request(row['Root Domain'], num_requests, dns_query):  # ICMP and DNS
-                print(row['Root Domain'])
-            else:
-                print('Could not ping/DNS the domain: ' + row['Root Domain'])
-                
-    os.system("sudo pkill -2 tcpdump")  # Kill the process
-    
-
-def ping_ip(domain, num_pings):  # ICMP
-    """Pings a domain
-
-    Args:
-        domain (string): Domain to be pinged
-        num_pings (integer): Number of pings
+        domain (str): Domain to ping
+        num_pings (int): Number of ping requests
 
     Returns:
-        boolean: True if the domain is reachable, False otherwise
+        bool: True if domain is reachable, False otherwise
     """
-    response = os.system(f"ping -c {num_pings} {domain}")
-    if response == 0:
-        return True
-    else:
-        return False
-    
+    response = os.system(f"ping -c {num_pings} {domain} > /dev/null 2>&1")
+    return response == 0
 
-def nslookup_request(domain, num_dns, dns_query):  # DNS
-    """Makes a DNS request
+
+def nslookup_domain(domain, num_requests, dns_query):
+    """Perform DNS lookups for a domain.
 
     Args:
-        domain (string): Domain to be requested
-        num_dns (integer): Number of DNS requests
-        dns_query (nslookup): Query for nslookup
+        domain (str): Domain to lookup
+        num_requests (int): Number of DNS requests
+        dns_query (Nslookup): Nslookup instance
 
     Returns:
-        boolean: True if the domain is reachable, False otherwise
+        bool: True if domain is resolvable, False otherwise
     """
-    for i in range(0, num_dns):
-        ips_record = dns_query.dns_lookup(domain)
-        print(ips_record.response_full, ips_record.answer)
+    answer = None
+    
+    for _ in range(num_requests):
+        try:
+            result = dns_query.dns_lookup(domain)
+            answer = result.answer
+            if answer:
+                print(f"Resolved: {domain} → {answer}")
+        except Exception as e:
+            print(f"DNS error for {domain}: {e}")
+    
+    return answer is not None
 
-    if ips_record.answer is not None:
-        return True
-    else:
-        return False
+
+def icmp_capture(domains_df, pcap_path, num_pings, interface=DEFAULT_INTERFACE):
+    """Capture ICMP (ping) packets from domains list.
+
+    Args:
+        domains_df (pd.DataFrame): DataFrame with 'Root Domain' column
+        pcap_path (str): Full path to output PCAP file
+        num_pings (int): Number of pings per domain
+        interface (str): Network interface to capture on
+    """
+    print(f"Starting tcpdump on interface {interface}...")
+    
+    os.system(f"sudo tcpdump -w {pcap_path} -i {interface} icmp > /dev/null 2>&1 &")
+    
+    successful = 0
+    failed = 0
+    
+    for index, row in domains_df.iterrows():
+        domain = row['Root Domain']
+        print(f"Pinging {domain}...\n")
+        
+        if ping_domain(domain, num_pings):
+            print(f"{domain} is reachable")
+            successful += 1
+        else:
+            print(f"{domain} is unreachable")
+            failed += 1
+    
+    print(f"Stopping capture...\n")
+    os.system("sudo pkill -2 tcpdump")
+    
+    print(f"ICMP capture complete: {successful} successful, {failed} failed\n")
+    
+
+def dns_capture(domains_df, pcap_path, num_requests, interface=DEFAULT_INTERFACE, dns_server=DEFAULT_DNS_SERVER):
+    """Capture DNS packets from domains list.
+
+    Args:
+        domains_df (pd.DataFrame): DataFrame with 'Root Domain' column
+        pcap_path (str): Full path to output PCAP file
+        num_requests (int): Number of DNS requests per domain
+        interface (str): Network interface to capture on
+        dns_server (str): DNS server to use for lookups
+    """
+    print(f"Starting tcpdump on interface {interface}...")
+    
+    os.system(f"sudo tcpdump -w {pcap_path} -i {interface} 'udp dst port 53' > /dev/null 2>&1 &")
+    
+    dns_query = Nslookup(dns_servers=[dns_server], verbose=False, tcp=False)
+    
+    successful = 0
+    failed = 0
+    
+    for index, row in domains_df.iterrows():
+        domain = row['Root Domain']
+        print(f"Querying {domain}...\n")
+        
+        if nslookup_domain(domain, num_requests, dns_query):
+            successful += 1
+        else:
+            print(f"{domain} could not be resolved")
+            failed += 1
+    
+    print(f"Stopping capture...\n")
+    os.system("sudo pkill -2 tcpdump")
+    
+    print(f"DNS capture complete: {successful} successful, {failed} failed\n")
+    
+def icmp_dns_capture(domains_df, pcap_path, num_requests, interface=DEFAULT_INTERFACE, dns_server=DEFAULT_DNS_SERVER):
+    """Capture both ICMP and DNS packets from domains list.
+
+    Args:
+        domains_df (pd.DataFrame): DataFrame with 'Root Domain' column
+        pcap_path (str): Full path to output PCAP file
+        num_requests (int): Number of requests per domain (both ICMP and DNS)
+        interface (str): Network interface to capture on
+        dns_server (str): DNS server to use for lookups
+    """
+    print(f"\n[ICMP + DNS CAPTURE]")
+    print(f"Starting tcpdump on interface {interface}...")
+    
+    os.system(f"sudo tcpdump -w {pcap_path} -i {interface} 'icmp or (udp dst port 53)' > /dev/null 2>&1 &")
+    
+    dns_query = Nslookup(dns_servers=[dns_server], verbose=False, tcp=False)
+    
+    successful = 0
+    failed = 0
+    
+    for index, row in domains_df.iterrows():
+        domain = row['Root Domain']
+        print(f"Testing {domain}...\n")
+        
+        ping_ok = ping_domain(domain, num_requests)
+        dns_ok = nslookup_domain(domain, num_requests, dns_query)
+        
+        if ping_ok and dns_ok:
+            print(f"{domain} is fully reachable (ICMP + DNS)")
+            successful += 1
+        else:
+            print(f"{domain} partially reachable (ICMP: {ping_ok}, DNS: {dns_ok})")
+            failed += 1
+    
+    print(f"Stopping capture...\n")
+    os.system("sudo pkill -2 tcpdump")
+    
+    print(f"ICMP+DNS capture complete: {successful} fully reachable, {failed} partial/failed\n")
 
 
 def main():
-    """Main function
-    """
+    """Main function to generate network traffic dataset.
     
-
-
-    while True:
-        option = input("Choose the option:\n1 - ICMP\n2 - DNS\n3 - ICMP and DNS\n")
+    This script requires sudo privileges to run tcpdump.
+    Ensure the CSV file contains a 'Root Domain' column with domain names.
+    """
+    args_parser = ArgumentParser(description='Generate network traffic dataset by capturing ICMP/DNS packets')
+    args_parser.add_argument('--csv_name',type=str,required=True,help='Name of the CSV file with domains (must have "Root Domain" column)')
+    args_parser.add_argument('--protocol',type=str,choices=['icmp', 'dns', 'icmp_dns'],default='icmp',help='Protocol to capture: icmp (ping), dns (lookups), or icmp_dns (both)')
+    args_parser.add_argument('--num_requests',type=int,default=5,help='Number of requests per domain (default: 5)')
+    args_parser.add_argument('--pcap_name',type=str,required=True,help='Name of the output PCAP file')
+    args_parser.add_argument('--interface',type=str,default=DEFAULT_INTERFACE,help=f'Network interface to capture on (default: {DEFAULT_INTERFACE})')
+    args_parser.add_argument('--dns_server',type=str,default=DEFAULT_DNS_SERVER,help=f'DNS server for lookups (default: {DEFAULT_DNS_SERVER})')
+    args = args_parser.parse_args()
+    
+    config = DatasetConfig()
+    
+    print(f"Protocol: {args.protocol.upper()}")
+    print(f"Requests per domain: {args.num_requests}")
+    print(f"Interface: {args.interface}")
+    
+    csv_path = config.get_csv_path(args.csv_name)
+    
+    if not os.path.exists(csv_path):
+        print(f"Error: CSV file not found: {csv_path}\n")
+        return
+    
+    try:
+        domains_df = pd.read_csv(csv_path)
         
-        if option == '1':
-            num_pings = int(input("Enter the number of pings: "))
-            pcap_name = input("Enter the name of the pcap file: ") + '.pcap'
-            detect_unreachable_domains(option)
-            icmp_capture(pcap_name, num_pings, pcap_dir)
-            break
+        if 'Root Domain' not in domains_df.columns:
+            print(f"Error: CSV must contain 'Root Domain' column\n")
+            print(f"Available columns: {', '.join(domains_df.columns)}")
+            return
         
-        elif option == '2':
-            num_dns = int(input("Enter the number of dns requests: "))
-            pcap_name = input("Enter the name of the pcap file: ") + '.pcap'
-            detect_unreachable_domains(option)
-            dns_capture(pcap_name, num_dns, pcap_dir)
-            break
+        print(f"Loaded {len(domains_df)} domains from {args.csv_name}\n")
         
-        elif option == '3':
-            num_requests = int(input("Enter the number of requests: "))
-            pcap_name = input("Enter the name of the pcap file: ") + '.pcap'
-            detect_unreachable_domains(option, num_requests)
-            icmp_dns_capture(pcap_name, num_requests, pcap_dir)
-            break
+    except Exception as e:
+        print(f"Error loading CSV: {e}\n")
+        return
+    
+    pcap_path = config.get_pcap_path(args.pcap_name)
+    print(f"Output PCAP: {pcap_path}\n")
+    
+    try:
+        if args.protocol == 'icmp':
+            icmp_capture(domains_df, pcap_path, args.num_requests, args.interface)
         
-        else:
-            print('Invalid option!')
-            
+        elif args.protocol == 'dns':
+            dns_capture(domains_df, pcap_path, args.num_requests, args.interface, args.dns_server)
+        
+        elif args.protocol == 'icmp_dns':
+            icmp_dns_capture(domains_df, pcap_path, args.num_requests, args.interface, args.dns_server)
+        
+        print(f"PCAP file saved to: {pcap_path}")
+    
+        
+    except KeyboardInterrupt:
+        print(f"Capture interrupted by user\n")
+        print(f"Stopping tcpdump...")
+        os.system("sudo pkill -2 tcpdump")
+        print(f"Partial capture saved to: {pcap_path}\n")
+    
+    except Exception as e:
+        print(f"Error during capture: {e}\n")
+        os.system("sudo pkill -2 tcpdump")
     
 if __name__ == '__main__':
-    """Starts the program
-    """
     main()

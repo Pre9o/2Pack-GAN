@@ -23,7 +23,7 @@ if not os.path.exists(ud_dns_file_path):
 current_unreachable_domains = []
 
 df = pd.DataFrame(pd.read_csv(csv_file_path, sep=','))
-print(df.head()) # Debug to check if the file is read correctly
+print(df.head()) 
 
 def detect_unreachable_domains(option, num_requests=1, dns_query = Nslookup(dns_servers=["1.1.1.1"], verbose=False, tcp=False)):
     """Detects unreachable domains using ICMP or DNS requests
@@ -168,6 +168,9 @@ def nslookup_request(domain, num_dns, dns_query):  # DNS
 def main():
     """Main function
     """
+    
+
+
     while True:
         option = input("Choose the option:\n1 - ICMP\n2 - DNS\n3 - ICMP and DNS\n")
         

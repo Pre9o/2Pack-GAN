@@ -1,3 +1,11 @@
+"""
+Converts pcap files to npz datasets.    
+
+This script processes pcap files to extract useful packet data,
+transforms it into a matrix representation, and saves the resulting
+dataset in NPZ format for training GAN models.
+"""
+
 import numpy as np
 import os
 import pyshark

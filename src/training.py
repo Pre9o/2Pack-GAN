@@ -1,3 +1,11 @@
+"""
+Training module for WGAN to generate synthetic network packets.
+
+This module sets up the training environment, manages configurations,
+and handles the training loop for the WGAN model to generate realistic
+network packet representations.
+"""
+
 import os
 import json
 import numpy as np
@@ -303,6 +311,13 @@ def setup_models_and_optimizers(args, input_shape, config):
         
 
 def main():
+    """
+    Main function to set up and start WGAN training.
+
+    This function parses command line arguments, initializes the training
+    configuration, builds the generator and discriminator models, compiles the
+    WGAN, and starts the training process with appropriate callbacks.
+    """
     argument_parser = ArgumentParser()
     argument_parser.add_argument('--dataset_name', type=str, default='default_dataset', help='Name of the dataset (npz file without extension)')
     argument_parser.add_argument('--l2_reg', type=float, default=2.5e-5, help='L2 regularization factor')

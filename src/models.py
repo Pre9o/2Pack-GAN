@@ -1,3 +1,10 @@
+"""
+Model definitions for the GAN architecture, including generator and discriminator.
+
+This module defines the architecture of the generator and discriminator models
+used in the GAN for generating synthetic network packet representations.
+"""
+
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Reshape, Conv2DTranspose, Conv2D

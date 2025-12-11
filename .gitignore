@@ -167,4 +167,6 @@ DNS/GERAÇÃO DE PACOTES GAN PRONTA/generated_dns_packets_by_gan/dns.pcap
 *Zone.Identifier
 npz/
 results/
+pcaps/
+*.csv
 generated_dns_packets_by_gan/

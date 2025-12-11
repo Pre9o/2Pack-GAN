@@ -1,3 +1,12 @@
+"""
+WGAN module implementing the Wasserstein GAN with Gradient Penalty.
+
+This module defines the WGAN class, which extends the Keras Model class to
+implement the training loop for the Wasserstein GAN with Gradient Penalty.
+It includes methods for compiling the model, calculating the gradient penalty,
+and performing a training step.
+"""
+
 import tensorflow as tf
 from tensorflow import keras
 

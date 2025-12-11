@@ -1,3 +1,10 @@
+"""
+Data loader module for loading datasets from NPZ files.
+
+This module provides functionality to load training and testing datasets
+stored in NPZ format from a specified directory structure.
+"""
+
 import numpy as np
 import os
 
